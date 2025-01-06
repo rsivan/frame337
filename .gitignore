@@ -2,3 +2,4 @@
 /Debug
 /Release
 /test/dut_output
+*.vcxproj.user
