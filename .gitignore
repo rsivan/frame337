@@ -3,3 +3,4 @@
 /Release
 /test/dut_output
 *.vcxproj.user
+test/test-results.xml

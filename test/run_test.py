@@ -24,6 +24,7 @@
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 #-------------------------------------------------------------------------------------------------------------
 
+import datetime
 import subprocess
 import os
 import glob
@@ -31,6 +32,7 @@ import string
 import filecmp
 import sys
 import shutil
+import xml.etree.ElementTree as ET
 
 # Test script for frame337 framer tool
 #
@@ -57,6 +59,13 @@ class Op_modes():
 		references = 2
 		sources = 3
 
+class TestResult:
+    def __init__(self, name, status, message="", time=0):
+        self.name = name
+        self.status = status  # "passed" or "failed"
+        self.message = message
+        self.time = time
+
 def process_files(arguments, input_dir, input_ext, tool_exec, output_dir, output_ext):
 
 	for input_file in glob.glob(input_dir + '/*' + input_ext):
@@ -79,6 +88,9 @@ class Tester:
 		self.failed = 0
 		self.reference_mode = 0
 		self.op_mode = init_op_mode
+		#Test results
+		self.results = []
+
 		if (self.op_mode == Op_modes.references):
 			self.f = open('run_test_cases.txt', 'w')
 
@@ -122,15 +134,20 @@ class Tester:
 					dut_output_file_name = 'dut_output/tid' + (str(self.test_id)).zfill(3) + '_' + file_stem + os.path.splitext(ref_output_file_name)[1]
 					cmd = dut_frame337 + arguments + ' -i' + input_file + ' -o' + dut_output_file_name
 					print ("DUT cmd: " + cmd)
-					# dut_test_output = subprocess.check_output(cmd, cwd='.', stderr=subprocess.STDOUT, shell=True).decode()
+					start_time = datetime.datetime.now()
 					dut_test_output = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 					print (dut_test_output.stdout.decode())
-					if(filecmp.cmp(ref_output_file_name, dut_output_file_name)):
+					message = input_file + " -> " + dut_output_file_name
+					if (filecmp.cmp(ref_output_file_name, dut_output_file_name)):
 						print (input_file + " -> " + dut_output_file_name + " Passed")
+						status = "passed"
 						self.passed += 1
 					else:
 						print (input_file + " -> " + dut_output_file_name + " Failed")
+						status = "failed"
 						self.failed += 1
+					time_taken = (datetime.datetime.now() - start_time).total_seconds()
+					self.results.append(TestResult(message, status, "", time_taken))
 					self.test_id += 1
 				else:
 					print >> sys.stderr, 'Test cases file is truncated at line: ' + line
@@ -279,6 +296,8 @@ def main():
 
 	Tester1.run_test_cases();
 
+	create_junit_report(Tester1.results)
+
 	error_es_files = glob.glob(error_es + '/*.*')
 	# Data rate too high error case
 	# Unknown ES error case
@@ -287,5 +306,39 @@ def main():
 
 	Tester1.print_report()
 	return(0)
+
+def create_junit_report(test_results, suite_name="Dolby Conversions Suite"):
+	"""
+	Creates a JUnit-style XML report from a list of test results
+	
+	Args:
+		test_results: List of TestResult objects
+		suite_name: Name of the test suite
+	"""
+	# Create the root testsuite element
+	testsuite = ET.Element("testsuite")
+	testsuite.set("name", suite_name)
+	testsuite.set("timestamp", datetime.datetime.now().isoformat())
+	
+	# Count totals
+	total = len(test_results)
+	failures = sum(1 for t in test_results if t.status == "failed")
+	
+	testsuite.set("tests", str(total))
+	testsuite.set("failures", str(failures))
+	
+	# Add test cases
+	for result in test_results:
+		testcase = ET.SubElement(testsuite, "testcase")
+		testcase.set("name", result.name)
+		testcase.set("time", str(result.time))
+			
+		if result.status == "failed":
+			failure = ET.SubElement(testcase, "failure")
+			failure.set("message", result.message)
+	
+	# Create XML tree and save to file
+	tree = ET.ElementTree(testsuite)
+	tree.write("test-results.xml", encoding="utf-8", xml_declaration=True)
 
 main()
