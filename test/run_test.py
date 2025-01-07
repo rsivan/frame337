@@ -274,7 +274,7 @@ def main():
 
 	# Remove device under test output files
 	print ("Clean dut output directory")
-	shutil.rmtree( 'dut_output' )
+	shutil.rmtree( 'dut_output', ignore_errors=True )
 	os.mkdir( 'dut_output' )
 
 	Tester1.run_test_cases();
